@@ -13,14 +13,14 @@ not a synced copy.
 | skill | role |
 |---|---|
 | `hive-profile-builder` | scans a repo, writes `PROJECT-PROFILE.md` — the router every other skill here reads for tracker/docs info. Run this first in a new repo. |
-| `hive-architect` | the grill — relentless interview to sharpen a plan/design, writing ADRs + glossary via `domain-modeling` as it goes, with `hive-second-opinion` at major decisions |
-| `hive-second-opinion` | cross-model gut-check at a decision point, called by `hive-architect` |
-| `hive-ideate` | generates options past the obvious ones (`approach` mode feeds the grill); its `pre-ship` mode is left in verbatim but its downstream consumer (`/hive-scout`) is a build-phase skill not included here |
+| `hive-architect` | the grill — relentless interview to sharpen a plan/design, recording every settled decision as an ADR + glossary term via `domain-modeling` as it goes, and triggering `hive-second-opinion` at major solution-path forks — both are real, in-file calls, not aspirational |
+| `hive-second-opinion` | called on demand by `hive-architect` at a major solution-path fork (approach choice, not a clarifying question) — an independent cross-model read, surfaced before the human decides |
+| `hive-ideate` | generates options past the obvious ones, meant to run *before* the grill on high-stakes plans (`approach` mode). **Not actually wired in** — `hive-architect`'s own file never mentions it; the hand-off is an open TODO inside `hive-ideate`'s file. Today a human runs `/hive-ideate` first and hands the survivors to architect manually. Its `pre-ship` mode is left in verbatim but its downstream consumer (`/hive-scout`) is a build-phase skill not included here |
 | `hive-spec-writer` | turns the sharpened conversation into a spec/PRD, publishes to the tracker |
 | `hive-issue-planner` | breaks the spec into tracer-bullet tickets with blocking edges + Verification DOD; `references/templates.md` holds the **Jira/Linear/GitHub issue template** and the rehearsal `tickets.md` template |
-| `hive-panel` | heavy adversarial review — used here at issue-planner's step 5 as the invariant-trace panel over the spec + approved breakdown (its other normal use, reviewing a built unit's diff, doesn't apply in a planning-only repo) |
-| `hive-walkthrough` | final comprehension gate — briefs a human on the settled plan before any code gets written |
-| `hive-report` | shared voice/format rules every human-facing report above uses |
+| `hive-panel` | heavy adversarial review, called on demand at issue-planner's step 5 — only when the spec carries a real "Ownership and invariants" section, or scope touches security/isolation or a destructive migration (those two lenses always run when relevant). Skipped when the ADR behind the ticket already passed its own review. Its other normal use, reviewing a built unit's diff, doesn't apply in a planning-only repo |
+| `hive-walkthrough` | final comprehension gate — briefs a human on the settled plan before any code gets written. Doesn't offer a next step, it gates: only an unambiguous sign-off unlocks `/hive-master` (build, outside this repo) |
+| `hive-report` | shared voice/format rules — used in 4 of the 5 pipeline stages (architect, spec-writer, issue-planner, walkthrough all cite it by name for how they address the human). `hive-profile-builder` skips it, since it mostly writes a repo-facing file, not a human report |
 | `grilling`, `domain-modeling` | generic (non-hive) dependencies `hive-architect` invokes directly; bundled so this repo is self-contained |
 | `hive-rules.mdc` | the full rulebook (Laws A–M) from the parent corpus, included for the Law references inside `hive-panel`/`hive-ideate`. Most Laws govern the excluded dispatch/build system (Master, Leads, Builder, Inspector, Scout, Gatekeeper, PR-bugbot-triage) and don't apply here — the planning skills mainly lean on Law *D* (tracker discipline) and Law *F* (workflow edits get their own branch). |
 
@@ -54,17 +54,37 @@ things this repo doesn't have:
 
 ## Pipeline order
 
+The fixed sequence — every plan walks all five, in order:
+
 ```
-hive-profile-builder          (once, per repo)
+hive-profile-builder   (once, per repo)
         ↓
-hive-architect  ──uses──▶ hive-ideate (approach mode), hive-second-opinion, domain-modeling
+hive-architect
         ↓
 hive-spec-writer
         ↓
-hive-issue-planner  ──uses──▶ hive-panel (step 5, invariant trace)
+hive-issue-planner
         ↓
 hive-walkthrough
 ```
 
-`hive-report` is a cross-cutting dependency (voice/format) for every human-facing step
-above.
+`hive-ideate`, `hive-second-opinion`, and `hive-panel` are deliberately **not** drawn into
+this chain — they're tools architect and issue-planner reach for situationally (trigger
+conditions above), not steps every run passes through. `domain-modeling` and `hive-report`
+*do* run on every pass, but continuously inside a stage rather than as a step of their own.
+
+### Self-driving handoff
+
+Nothing external routes this pipeline — each stage's own file names what to run next, in
+its own words, at the end of its run:
+
+- **`hive-architect`**: *"Offer `/hive-spec-writer` to turn the outcome into a spec. Also
+  mention optional `/hive-panel`."*
+- **`hive-spec-writer`**: offers a branch — run `/hive-panel` over the spec now while it's
+  cheap to change, or go straight to `/hive-issue-planner`.
+- **`hive-issue-planner`**: *"After publishing, offer `/hive-walkthrough` — the
+  comprehension gate whose sign-off is `/hive-master`'s go-signal."*
+- **`hive-walkthrough`**: doesn't offer, it gates — only an explicit human sign-off
+  unlocks `/hive-master` (build, outside this repo).
+- **`hive-profile-builder`**: the one exception, no self-narrated handoff — the pointer to
+  architect lives one level up, in the `PROJECT-PROFILE.md` it writes.

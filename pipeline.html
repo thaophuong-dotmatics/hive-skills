@@ -1,0 +1,373 @@
+<title>Hive Planning Pipeline</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --paper: #EDF0F1;
+    --paper-raised: #F8F9FA;
+    --ink: #182432;
+    --ink-soft: #3C4856;
+    --muted: #5C6773;
+    --line: rgba(24,36,50,0.15);
+    --line-strong: rgba(24,36,50,0.30);
+    --accent: #A66A16;
+    --accent-soft: rgba(166,106,22,0.12);
+    --accent2: #2C7568;
+    --accent2-soft: rgba(44,117,104,0.12);
+    --shadow: 0 1px 2px rgba(24,36,50,0.06), 0 6px 20px rgba(24,36,50,0.05);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --paper: #13191F;
+      --paper-raised: #1A2129;
+      --ink: #E7E9E4;
+      --ink-soft: #C7CCD2;
+      --muted: #8D96A1;
+      --line: rgba(231,233,228,0.14);
+      --line-strong: rgba(231,233,228,0.28);
+      --accent: #E3A548;
+      --accent-soft: rgba(227,165,72,0.14);
+      --accent2: #5FBFAE;
+      --accent2-soft: rgba(95,191,174,0.14);
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.35);
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper: #13191F;
+    --paper-raised: #1A2129;
+    --ink: #E7E9E4;
+    --ink-soft: #C7CCD2;
+    --muted: #8D96A1;
+    --line: rgba(231,233,228,0.14);
+    --line-strong: rgba(231,233,228,0.28);
+    --accent: #E3A548;
+    --accent-soft: rgba(227,165,72,0.14);
+    --accent2: #5FBFAE;
+    --accent2-soft: rgba(95,191,174,0.14);
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.35);
+  }
+
+  *{ box-sizing:border-box; }
+  body{
+    margin:0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 1.55;
+  }
+  .page{
+    max-width: 1040px;
+    margin: 0 auto;
+    padding: 56px 28px 80px;
+    display: flex;
+    flex-direction: column;
+    gap: 48px;
+  }
+
+  /* header */
+  .eyebrow{
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 12.5px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 600;
+  }
+  h1{
+    margin: 10px 0 0;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-weight: 600;
+    font-size: clamp(28px, 4vw, 38px);
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+  }
+  .lede{
+    margin: 14px 0 0;
+    max-width: 62ch;
+    color: var(--ink-soft);
+    font-size: 17px;
+  }
+
+  /* diagram */
+  figure{ margin:0; }
+  .diagram-frame{
+    background: var(--paper-raised);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+    padding: 20px;
+  }
+  .diagram-scroll{ overflow-x: auto; }
+  svg.diagram{
+    display:block;
+    width: 100%;
+    min-width: 480px;
+    height: auto;
+    color: var(--ink);
+    font-family: "IBM Plex Sans", ui-sans-serif, sans-serif;
+  }
+  .node-title{
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-weight: 600;
+  }
+  .node-role{ fill: var(--muted); }
+  .edge-label{ fill: var(--ink-soft); font-size: 12px; }
+  .edge-label-mono{ font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .cluster-caption{ fill: var(--muted); font-size: 11.5px; letter-spacing: 0.03em; text-transform: uppercase; }
+  .badge-num{ font-family: "IBM Plex Mono", ui-monospace, monospace; font-weight: 700; fill: var(--accent); }
+  figcaption{
+    margin-top: 14px;
+    color: var(--muted);
+    font-size: 14px;
+    max-width: 68ch;
+  }
+
+  /* glossary */
+  section.glossary{ display:flex; flex-direction:column; gap:28px; }
+  .glossary-group h2{
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 600;
+    margin: 0 0 14px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--line);
+  }
+  .cards{
+    display:grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 14px;
+  }
+  .card{
+    background: var(--paper-raised);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 16px 18px;
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+  }
+  .card.pipeline{ border-left: 3px solid var(--accent); }
+  .card.support{ border-left: 3px solid var(--accent2); }
+  .card-head{ display:flex; align-items:baseline; gap:8px; }
+  .card-num{
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 12px;
+    color: var(--accent);
+    font-weight: 700;
+  }
+  .card-name{
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-weight: 600;
+    font-size: 14.5px;
+  }
+  .card p{ margin:0; color: var(--ink-soft); font-size: 14.5px; }
+
+  footer{
+    color: var(--muted);
+    font-size: 13px;
+    border-top: 1px solid var(--line);
+    padding-top: 18px;
+  }
+  footer code{
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    background: var(--accent-soft);
+    padding: 1px 5px;
+    border-radius: 4px;
+    color: var(--ink);
+  }
+</style>
+
+<div class="page">
+
+  <header>
+    <div class="eyebrow">hive-skills · reference</div>
+    <h1>The planning pipeline</h1>
+    <p class="lede">Five sequential stages take a repo from no plan to a reviewed, ticketed breakdown ready to build. Two stages pull in supporting skills mid-step; one skill runs underneath all of them.</p>
+  </header>
+
+  <figure>
+    <div class="diagram-frame">
+      <div class="diagram-scroll">
+        <svg class="diagram" viewBox="0 0 620 900" role="img" aria-label="Five-stage linear pipeline: hive-profile-builder produces PROJECT-PROFILE.md for hive-architect, which produces a sharpened plan for hive-spec-writer, which produces a spec for hive-issue-planner, which produces a ticket breakdown for hive-walkthrough. hive-report supplies shared voice and format to architect, spec-writer, issue-planner and walkthrough throughout. Ideate, second-opinion, domain-modeling and panel are situational tools architect and issue-planner may reach for, not fixed steps, so they are not drawn as part of the flow.">
+          <defs>
+            <marker id="arrow-main" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" style="fill:var(--accent)"/>
+            </marker>
+          </defs>
+
+          <!-- hive-report rail -->
+          <line x1="28" y1="228" x2="28" y2="872" style="stroke:var(--muted);stroke-width:1.5;stroke-dasharray:2 4;opacity:0.7"/>
+          <line x1="28" y1="265" x2="53" y2="265" style="stroke:var(--muted);stroke-width:1.5;stroke-dasharray:2 4;opacity:0.7"/>
+          <line x1="28" y1="455" x2="53" y2="455" style="stroke:var(--muted);stroke-width:1.5;stroke-dasharray:2 4;opacity:0.7"/>
+          <line x1="28" y1="645" x2="53" y2="645" style="stroke:var(--muted);stroke-width:1.5;stroke-dasharray:2 4;opacity:0.7"/>
+          <line x1="28" y1="835" x2="53" y2="835" style="stroke:var(--muted);stroke-width:1.5;stroke-dasharray:2 4;opacity:0.7"/>
+          <text x="16" y="550" class="edge-label edge-label-mono" transform="rotate(-90 16 550)" text-anchor="middle" style="fill:var(--muted)">hive-report — voice &amp; format for every human-facing stage</text>
+
+          <!-- main spine arrows -->
+          <line x1="140" y1="110" x2="140" y2="222" style="stroke:var(--accent);stroke-width:2" marker-end="url(#arrow-main)"/>
+          <text x="152" y="170" class="edge-label edge-label-mono">PROJECT-PROFILE.md</text>
+
+          <line x1="140" y1="300" x2="140" y2="412" style="stroke:var(--accent);stroke-width:2" marker-end="url(#arrow-main)"/>
+          <text x="152" y="360" class="edge-label edge-label-mono">sharpened plan</text>
+
+          <line x1="140" y1="490" x2="140" y2="602" style="stroke:var(--accent);stroke-width:2" marker-end="url(#arrow-main)"/>
+          <text x="152" y="550" class="edge-label edge-label-mono">spec / PRD</text>
+
+          <line x1="140" y1="680" x2="140" y2="792" style="stroke:var(--accent);stroke-width:2" marker-end="url(#arrow-main)"/>
+          <text x="152" y="740" class="edge-label edge-label-mono">ticket breakdown</text>
+
+          <!-- number badges -->
+          <g>
+            <circle cx="70" cy="75" r="17" style="fill:var(--paper-raised);stroke:var(--accent);stroke-width:2"/>
+            <text x="70" y="80" text-anchor="middle" class="badge-num" font-size="14">1</text>
+          </g>
+          <g>
+            <circle cx="70" cy="265" r="17" style="fill:var(--paper-raised);stroke:var(--accent);stroke-width:2"/>
+            <text x="70" y="270" text-anchor="middle" class="badge-num" font-size="14">2</text>
+          </g>
+          <g>
+            <circle cx="70" cy="455" r="17" style="fill:var(--paper-raised);stroke:var(--accent);stroke-width:2"/>
+            <text x="70" y="460" text-anchor="middle" class="badge-num" font-size="14">3</text>
+          </g>
+          <g>
+            <circle cx="70" cy="645" r="17" style="fill:var(--paper-raised);stroke:var(--accent);stroke-width:2"/>
+            <text x="70" y="650" text-anchor="middle" class="badge-num" font-size="14">4</text>
+          </g>
+          <g>
+            <circle cx="70" cy="835" r="17" style="fill:var(--paper-raised);stroke:var(--accent);stroke-width:2"/>
+            <text x="70" y="840" text-anchor="middle" class="badge-num" font-size="14">5</text>
+          </g>
+
+          <!-- stage 1: profile-builder -->
+          <rect x="95" y="40" width="365" height="70" rx="9" style="fill:var(--paper);stroke:var(--line-strong);stroke-width:1.5"/>
+          <text x="115" y="68" class="node-title" font-size="15.5">hive-profile-builder</text>
+          <text x="115" y="89" class="node-role" font-size="13">scans the repo, writes the router every other stage reads</text>
+
+          <!-- stage 2: architect -->
+          <rect x="95" y="230" width="365" height="70" rx="9" style="fill:var(--paper);stroke:var(--accent);stroke-width:2"/>
+          <text x="115" y="258" class="node-title" font-size="15.5">hive-architect</text>
+          <text x="115" y="279" class="node-role" font-size="13">the grill — sharpens the plan, decision by decision</text>
+
+          <!-- stage 3: spec-writer -->
+          <rect x="95" y="420" width="365" height="70" rx="9" style="fill:var(--paper);stroke:var(--line-strong);stroke-width:1.5"/>
+          <text x="115" y="448" class="node-title" font-size="15.5">hive-spec-writer</text>
+          <text x="115" y="469" class="node-role" font-size="13">synthesizes the settled conversation into a spec</text>
+
+          <!-- stage 4: issue-planner -->
+          <rect x="95" y="610" width="365" height="70" rx="9" style="fill:var(--paper);stroke:var(--accent);stroke-width:2"/>
+          <text x="115" y="638" class="node-title" font-size="15.5">hive-issue-planner</text>
+          <text x="115" y="659" class="node-role" font-size="13">breaks the spec into tracer-bullet tickets</text>
+
+          <!-- stage 5: walkthrough -->
+          <rect x="95" y="800" width="365" height="70" rx="9" style="fill:var(--paper);stroke:var(--line-strong);stroke-width:1.5"/>
+          <text x="115" y="828" class="node-title" font-size="15.5">hive-walkthrough</text>
+          <text x="115" y="849" class="node-role" font-size="13">briefs the human before any code gets written</text>
+
+        </svg>
+      </div>
+    </div>
+    <figcaption>The amber spine is the fixed sequence — every plan walks all five steps, in order. The dashed rail is <code style="font-family:'IBM Plex Mono',monospace">hive-report</code>: not a step, but code inside all four human-facing stages, governing the voice/format of everything they write to you. Left off this diagram on purpose: <code style="font-family:'IBM Plex Mono',monospace">hive-ideate</code>, <code style="font-family:'IBM Plex Mono',monospace">hive-second-opinion</code>, and <code style="font-family:'IBM Plex Mono',monospace">hive-panel</code> are tools architect and issue-planner reach for situationally, not on every run — see "called on demand" below for when.</figcaption>
+  </figure>
+
+  <section class="glossary-group">
+    <h2 style="font-family:'IBM Plex Mono',monospace;font-size:13px;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);font-weight:600;margin:0 0 14px;padding-bottom:8px;border-bottom:1px solid var(--line)">Self-driving handoff — verified, not assumed</h2>
+    <p style="margin:0 0 14px;color:var(--ink-soft);font-size:14.5px;max-width:70ch">Nothing external routes this pipeline. Every stage's own file names what to run next, in its own words, at the end of its run:</p>
+    <div class="cards">
+      <div class="card pipeline">
+        <div class="card-head"><span class="card-name">hive-architect</span></div>
+        <p>"Offer <code style="font-family:'IBM Plex Mono',monospace">/hive-spec-writer</code> to turn the outcome into a spec. Also mention optional <code style="font-family:'IBM Plex Mono',monospace">/hive-panel</code>."</p>
+      </div>
+      <div class="card pipeline">
+        <div class="card-head"><span class="card-name">hive-spec-writer</span></div>
+        <p>Offers a branch, not a single next step: run <code style="font-family:'IBM Plex Mono',monospace">/hive-panel</code> over the spec now while it's cheap to change, or go straight to <code style="font-family:'IBM Plex Mono',monospace">/hive-issue-planner</code>.</p>
+      </div>
+      <div class="card pipeline">
+        <div class="card-head"><span class="card-name">hive-issue-planner</span></div>
+        <p>"After publishing, offer <code style="font-family:'IBM Plex Mono',monospace">/hive-walkthrough</code> — the comprehension gate whose sign-off is <code style="font-family:'IBM Plex Mono',monospace">/hive-master</code>'s go-signal."</p>
+      </div>
+      <div class="card pipeline">
+        <div class="card-head"><span class="card-name">hive-walkthrough</span></div>
+        <p>Doesn't offer — it gates. Only an unambiguous human sign-off unlocks the next step (<code style="font-family:'IBM Plex Mono',monospace">/hive-master</code>, build — outside this repo).</p>
+      </div>
+      <div class="card pipeline">
+        <div class="card-head"><span class="card-name">hive-profile-builder</span></div>
+        <p>The one exception — no self-narrated handoff. The pointer to architect lives one level up, in the <code style="font-family:'IBM Plex Mono',monospace">PROJECT-PROFILE.md</code> it writes.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="glossary">
+    <div class="glossary-group">
+      <h2>Pipeline stages — run in order</h2>
+      <div class="cards">
+        <div class="card pipeline">
+          <div class="card-head"><span class="card-num">01</span><span class="card-name">hive-profile-builder</span></div>
+          <p>Scans a repo once and writes <code style="font-family:'IBM Plex Mono',monospace">PROJECT-PROFILE.md</code> — a one-screen router recording docs, commands, tracker conventions, and review lenses. Every later stage reads this instead of re-discovering the repo.</p>
+        </div>
+        <div class="card pipeline">
+          <div class="card-head"><span class="card-num">02</span><span class="card-name">hive-architect</span></div>
+          <p>The grill. A relentless interview that sharpens a plan or design, writing ADRs and glossary terms as decisions land, pulling in options and a cross-model check along the way.</p>
+        </div>
+        <div class="card pipeline">
+          <div class="card-head"><span class="card-num">03</span><span class="card-name">hive-spec-writer</span></div>
+          <p>No new interview — synthesizes the conversation the grill just sharpened into a spec/PRD and publishes it to the tracker.</p>
+        </div>
+        <div class="card pipeline">
+          <div class="card-head"><span class="card-num">04</span><span class="card-name">hive-issue-planner</span></div>
+          <p>Breaks the spec into tracer-bullet tickets, each with blocking edges, acceptance criteria, and a Verification DOD — the actual Jira/Linear/GitHub issue bodies.</p>
+        </div>
+        <div class="card pipeline">
+          <div class="card-head"><span class="card-num">05</span><span class="card-name">hive-walkthrough</span></div>
+          <p>The last gate before code. Briefs the human top-down — whole thing, then phases, then tickets — in plain language, so nothing gets built as a surprise.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="glossary-group">
+      <h2>Called on demand — not fixed steps</h2>
+      <div class="cards">
+        <div class="card support">
+          <div class="card-head"><span class="card-name">hive-ideate</span></div>
+          <p><strong>Call it when:</strong> the plan is high-stakes and the obvious first answer might be wrong — architecture, a public surface, a schema, a phase about to ship — before the grill starts. Generates real alternatives (isolated parallel "frames," critic-scored) so architect grills the survivors instead of a single cold plan.<br><em>Not wired in:</em> architect's own file never mentions it. Today a human has to run <code style="font-family:'IBM Plex Mono',monospace">/hive-ideate</code> first and hand its output in — the automatic hand-off is an open TODO in ideate's own file.</p>
+        </div>
+        <div class="card support">
+          <div class="card-head"><span class="card-name">hive-second-opinion</span></div>
+          <p><strong>Call it when:</strong> architect hits a major solution-path fork — an approach choice, not a clarifying question. Architect's own file triggers this directly and surfaces the result before you decide; agree → one recommendation, disagree → one debate round then converge.</p>
+        </div>
+        <div class="card support">
+          <div class="card-head"><span class="card-name">hive-panel</span></div>
+          <p><strong>Call it when:</strong> issue-planner's step 5 finds the spec carries a real "Ownership and invariants" section, or the scope touches security/isolation or a destructive migration (those two lenses always run when relevant). Heavy adversarial review — lens panel plus advocate/skeptic debate — over the spec + breakdown, scoped to just what the invariant trace flagged as uncovered or contradictory. Skipped when the ADR behind the ticket already passed its own review — re-litigating a settled decision just pays for the privilege.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="glossary-group">
+      <h2>Runs continuously inside a stage</h2>
+      <div class="cards">
+        <div class="card support">
+          <div class="card-head"><span class="card-name">domain-modeling</span></div>
+          <p>Not situational — architect calls it every time a decision actually settles, recording the ADR and glossary term right then. Keeps the plan's vocabulary pinned down so a term means one thing for the rest of the pipeline.</p>
+        </div>
+        <div class="card support">
+          <div class="card-head"><span class="card-name">hive-report</span></div>
+          <p>Used in every human-facing stage but one — architect, spec-writer, issue-planner, and walkthrough all address you "per <code style="font-family:'IBM Plex Mono',monospace">/hive-report</code>" by name in their own files. Not a stage itself: the shared voice and formatting rules that keep those four from drifting into their own style. (profile-builder doesn't cite it — it mostly writes a repo-facing file, not a human-facing report.)</p>
+        </div>
+        <div class="card support">
+          <div class="card-head"><span class="card-name">grilling</span></div>
+          <p>The generic interview mechanic hive-architect forks from — the question discipline itself, reusable outside hive entirely.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Extracted from <code>hive-testbed</code> into the standalone <code>hive-skills</code> repo, 2026-08-20.
+  </footer>
+
+</div>

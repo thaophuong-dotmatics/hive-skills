@@ -1,0 +1,293 @@
+---
+description: Canonical cross-cutting law for Thao's hive workflow — dispatch topology, model families, router discipline, tracker-first, and commit / config / merge safety. Binds every /hive-* skill and every dispatched hive agent (Master, Lead, all leaves). Applies inside the hive workflow ONLY, never a general Cursor session.
+globs: .claude/skills/hive-*/**,.cursor/skills/hive-*/**,docs/agents/hive-*,.hive-workflow/**
+alwaysApply: false
+---
+
+# Hive rulebook — one canonical source for every cross-cutting law
+
+**Scope: the hive workflow only.** These laws bind every `/hive-*` skill and every agent the hive dispatches (Master, Lead, and all leaves).
+- Nothing outside the hive.
+
+**The load-bearing guarantee is the skills, not this frontmatter.**
+- Inside Cursor, the `globs` above auto-attach this file to the hive's own paths — so inside the hive it applies, outside it never does.
+- **Claude Code** (doesn't read `.cursor/rules/`) and **CLI-dispatched leaves** (no `.mdc` auto-attach) get the law by two other channels, both carried by the **dispatch prompt**:
+  1. **An explicit skill path** — the dispatcher names the owning *skill's* file (e.g. `$SKILLS_DIR/hive-report/SKILL.md`, `$SKILLS_DIR/hive-ticket-lead/SKILL.md`; `$SKILLS_DIR` = the **absolute** resolved skills dir handed down in the dispatch, **never** the repo-relative `.cursor/skills` — `/hive-lead` §6) so the agent can read that rule itself. **Almost no skill hands a leaf this rulebook's path** (`/hive-report` is the exception, for Law *A*'s host names) — an isolated leaf gets the law only through channel 2, which is why `hive-gatekeeper` says of Laws *G* and *H* that it "cannot open it". Handing the rulebook path down is a Phase-2 target, not current behaviour.
+  2. **A deliberate inline restatement** — the rules that leaf must obey are pasted into its prompt, so a skill-load or read failure can't drop a gate. Every such restatement is registered in `docs/agents/hive-skill-maintenance.md`.
+- *(An opening-line rulebook binding in every `/hive-*` skill is a **Phase-2 target, not yet met** — **1 of the 18 skills carries one today** (`hive-ideate`).)*
+
+**`/hive-lead` (and its class tables) is the deeper source — it wins on any detail this rulebook only summarizes.**
+- Heavy role-specific detail (commit examples, naming worked-examples, class→family tables) is stated here once and points to the owning skill.
+
+---
+
+## A. Dispatch topology (authoritative)
+
+- **The Master is a pure router.** Schedules tickets by dependency, runs gates.
+  - **Never** runs a ticket loop in its own context.
+  - **Only ever** creates Leads.
+- **Master → Lead = ONE hop, into the Lead's own separate context.**
+  - **The principle: the hop must land the Lead in its OWN context. The TOOL that achieves it is host-dependent** — native-subagent tool where one exists for that Lead host, otherwise the sanctioned CLI/REST launch. A non-native mechanism is **not** a loophole and **not** a second hop; it is the *same* one hop, executed the only way that Master/Lead pairing allows.
+  - **Every Master-host × Lead-host pairing:**
+
+    | Master host ↓ / Lead host → | `cursor-cloud` | `cursor-local` | `claude-cloud` / `claude-local` |
+    |---|---|---|---|
+    | **Cursor** | **Task** tool (Lead = viewable Cursor Cloud agent) | **Task** tool, or `hive-dispatch run` → `cursor-agent -p … -w` | *(later)* |
+    | **Claude Code** | Cursor Cloud **REST** | **`hive-dispatch run` → `cursor-agent -p … -w`** — sanctioned, the only mechanism | **Agent** tool |
+
+  - **A cursor-cloud Lead launches and reports over the Cursor Cloud REST API from EITHER Master host** — `POST /v1/agents` → `{agent.id, run.id, url}`, polled at `GET /v1/agents/{id}/runs/{runId}`. The Cursor **Task** tool is the in-app equivalent of that same hop. Either way: one hop, to a separate, viewable Lead context.
+  - **Claude Code Master → `cursor-local` Lead: `hive-dispatch run --agent-cmd cursor-agent --role lead … -- --force -w <name> --worktree-base <branch>`.** Claude Code's Agent tool cannot reach a cursor host, so the CLI **is** the native-subagent equivalent here — it lands the Lead in its own process, own context, own worktree. **Through the guard, never raw:** `cursor-agent -p` invoked directly bypasses the order gates, the tripwire, the branch lock, the durable `queued` row and the watchdog, all of which this law makes mandatory. Anything the raw CLI needs goes after the `--`. Mechanics: `docs/agents/hive-cloud-dispatch.md`.
+- **The Lead sits at the far side of that one hop** — its **own viewable context** (a native subagent wherever the Master host has one for that Lead host).
+  - *"Not the same session"* means its own context — **not** "launched outside the subagent tool."
+- **Lead → below = leaf mechanism follows the host family** — two paths, **and every CLI spawn on either path routes through `hive-dispatch` — `run` for a single leaf, `fanout` for a batch of them** (the dispatch guard — hive-testbed `bin/`, installed as `hive-dispatch`). The guard enforces the order gates, same-class tripwire, branch lock, stagger, watchdog and error classifier, then **execs the host CLI directly** — the guard IS the sanctioned direct invocation. "Never wrapped in a script" below means hand-rolled shell-script indirection (`bash run.sh` — the exec-daemon PATH trap), which the guard is not.
+  - **cursor → `cursor-agent -p` CLI via `hive-dispatch run`** — never a hand-rolled script wrapper around the CLI (exec-daemon PATH caveat: `docs/agents/hive-cloud-dispatch.md`). Nests freely; full roster (claude / gpt / xai); cross-family review / skeptic.
+  - **claude → CLI leaves via `hive-dispatch run --agent-cmd claude` where the `claude` CLI is reachable.** A **native subagent** (Agent / Task tool) spawn **bypasses the guard** — permitted only where no CLI is reachable (in-harness-only hosts); the dispatcher then runs the **artifact gate mechanically** — `hive-dispatch check-artifacts --floor <epoch recorded before the spawn> --require-artifact <path>` after the leaf returns; exit 12 → the row is `blocked`, never `done` (#87; the guard *scripts* run wherever Bash does — it is the agent-*spawning* CLI that is unreachable) — and applies the remaining guards (order gate, tripwire, branch lock, `queued` row, watchdog, deferral scan) by hand, stating both on its board row. **Nests too** — probed 2026-07-25, three levels deep (parent → child → grandchild, both returned live). Claude-only, **no cross-family** — review / skeptic use a **different Claude model, stated openly** ("ignore cross-models"). Different, and never weaker: with only two models on the roster the **builder yields the top one** (builder `sonnet`, reviewers `opus`), the fixed order in `/hive-lead` §4.3 ².
+    - **Nesting is a property of the CHILD'S AGENT TYPE, not a depth limit.** `general-purpose` and `claude` carry every tool including `Agent`, so they spawn; `Explore` and `Plan` are defined as *"all tools except `Agent`"* and therefore cannot. It is a **choosable property of the dispatch**, not a platform constraint — **dispatch anything that must spawn (any aggregator) as an agent type that carries the `Agent` tool**, or it silently cannot spawn.
+- **"Nothing nests," precisely — the two forbidden things (both paths): collapsing the per-ticket loop into one context, and running a lens / skeptic / debater in-process.** Neither is a nesting limit — **both host families nest.**
+  - **Cursor path:** the native tool is **exactly one hop** (Master→Lead); the CLI carries everything below and **nests freely** (proven cloud L1→L2→L3, 2026-07-24).
+  - **Claude path:** native subagents nest as well (Master→Lead→aggregator→lens, probed 2026-07-25) — subject to the agent-type rule above.
+- **Aggregators (Inspector, Panel) spawn their own sub-leaves — on EITHER path.**
+  - The Inspector spawns its lenses + skeptic; the Panel its lenses + debaters. **Cursor path:** `cursor-agent -p` CLI via `hive-dispatch run`. **Claude path:** CLI via the guard where reachable, else native subagents dispatched as an agent type that carries the `Agent` tool (guard bypassed — artifact gate run mechanically via `hive-dispatch check-artifacts` (#87), the remaining checks applied by hand, both stated on the board).
+  - **Why the aggregator and never the Lead:** sizing a lens manifest means reading the diff, and a Lead that opens a payload breaks Law *C*. Aggregator-spawns-its-own is what keeps the Lead thin.
+  - **The claude path keeps one genuine limit: claude-family models only, so no cross-family skeptic** — it runs a **different Claude model and must say so openly**, and by `/hive-lead` §4.3 ² that model is the **stronger** one (`opus`), the builder taking `sonnet`. That is about model vendors, not nesting.
+  - **Either path — never** run a lens / skeptic / debater in-process. Cursor path: it destroys the cross-family independence the skeptic exists for. Claude path: there's no cross-family, but a self-refuting aggregator is worthless — the ban still holds.
+- **A gate is a gate-Lead, not Master-run leaves.**
+  - The Master **tasks a gate-Lead** (one hop).
+  - The gate-Lead **dispatches per the host family** (both nest — cursor → CLI via `hive-dispatch run` · claude → CLI via the guard where reachable, else native subagents carrying the `Agent` tool under this law's carve-out, artifact gate via `hive-dispatch check-artifacts` (#87)) its Panel (conductor) / Gatekeeper / flow Scout, runs the gate loop, and returns **one verdict line**.
+  - The Master owns the gate **decision**, delegates the **running** — structurally identical to a ticket: `Master →native hop→ (gate-)Lead →per host family→ leaves`.
+- **Fan-out vs serialize** (a Lead / aggregator dispatching its CLI leaves):
+  - **Parallel** — independent read-only leaves over a **frozen** artifact (the review-lens panel; a Panel's lenses): each reads the same diff, writes its own findings file, no shared writes. Fan out together → **barrier** (one `hive-dispatch fanout` call returning — never a wait for a signal, never a re-check scheduled for a later turn; see Laws *A* and *A-3*) → skeptic (needs the lens findings) → aggregator.
+  - **Parallel still means parallel.** The ban below is on *backgrounding* a dispatch, not on concurrency: the whole fan-out goes out in one turn and runs at the same time — proven concurrent on claude-local, 2026-07-25. Serializing a lens panel to obey it is a misreading.
+  - **Serialize** — only when a leaf **depends on the previous leaf's result** (Builder→Inspector→Patcher) or **shares a mutable resource** (Patchers writing the same sub-branch; a Scout needing the live app to itself). Everything else fans out.
+- **Law *A* — dispatch every subagent as a blocking call, never fire-and-forget. This binds every hop, independently — a parent dispatching you blocking does not make your own dispatches blocking.** Invoking the native subagent tool (Builder, lens, skeptic, Inspector, Panel conductor, any leaf) must not return until that subagent has actually finished (`run_in_background: false` on Claude Code's Agent/Task tool). A parallel fan-out is still one blocking batch: **native tool** — put every call in the **same message** so they run concurrently and the whole batch resolves together; **CLI leaves** — one `hive-dispatch fanout`, next bullet.
+  - **A CLI fan-out is held open by ONE process, not by your intent: `hive-dispatch fanout --manifest <leaves.json> --run-dir "$HIVE_MEM/<run-key>"`** (`/hive-lead` §5.1). Every leaf you spawn is a child of **your current turn**, not of the run — when that turn ends, the tree is torn down. So a fan-out you do not block on is not *slower*, it is **deleted**: five lenses, staggered starts, one common death, empty logs and zero findings files (recorded 2026-07-30). **This is a second constraint, independent of the ordering one** — deferring the skeptic to a later turn satisfies ordering completely and every lens still dies, which is why the rule is a command and not a caution. `fanout` spawns the whole batch and returns only after the last leaf has, so the turn *cannot* end early. **Never background it** (`&`, `run_in_background: true`, a detached shell): that re-opens exactly the hole it closes.
+  - **A blocking call only guarantees your tool call won't return until the child's turn ends — not that the child's task is actually done.** If the child itself dispatches non-blocking and stalls, its turn ends early with an incomplete answer, and *that* incomplete answer is what your blocking call receives. Your call being blocking does not protect you from a non-compliant child; it only removes the stall as *your own* failure mode. So Law A is never satisfied once at the top — every dispatcher, at every depth (Master → Lead → Inspector/Panel conductor → any aggregator it spawns), must apply this to its own dispatches on its own. Before your first dispatch, this binds you regardless of how you yourself were dispatched.
+  - **If what you get back from a dispatch reads as an interim or incomplete answer** (e.g. "still working," "waiting on X") rather than the role's real distilled return, treat that as a stalled child, not a valid result: don't accept it, don't propagate it upward as if it were final — pull shared memory, check whether the child's real work already finished on disk, and either read the real result or re-dispatch it as a blocking call.
+  - Single source — no mode skill restates this; each cites `Law *A*` and points back here. If ever resumed with a non-blocking dispatch still outstanding: don't wait for a signal — `git -C "$HIVE_MEM" pull` and read the artifact path; a file that exists is a finished child. `/hive-master` §8.2's quiet-dispatcher watch remains a backstop, not the primary defense.
+- **Law *A-2* — a leaf blocked on an input it didn't dispatch itself does not wait.** If something you need is missing and you didn't dispatch it (e.g. a skeptic whose lens files aren't written yet), that's not yours to wait out. Return immediately: `blocked · dispatched before input existed · <what's missing>` — silence here hides a caller-side sequencing bug instead of surfacing it.
+- **Law *A-3*: your turn is your only turn.** A dispatched leaf (`claude -p`, `cursor-agent -p`) gets exactly ONE turn, and there is no later one. Anything you defer is not delayed, it is **deleted**: work you postpone never runs, and processes you leave behind are torn down with the turn. **You cannot perceive this from inside**, which is the whole defect: deferring is correct and routine in an interactive session, phrased identically, and silently fatal here.
+  - **Four recorded instances, one cause, four disguises.** Recognise your own phrasing, not only the spawn case:
+
+    | Disguise | What it sounds like |
+    |---|---|
+    | **Spawn and come back** | "dispatched the five lenses, I'll run the skeptic once they report back" |
+    | **Wait to be notified** | "waiting for the lens dispatch to complete, will resume once notified" |
+    | **Poll later** | "posted the trigger comment, scheduled a check in 6 minutes" |
+    | **Hand it to a later turn** | "no further action needed until X lands" |
+
+  - **The harness's native Task / Agent tool and `run_in_background` are forbidden inside a CLI leaf.** The third instance reached for exactly that after being warned in bold against ending its turn: the affordance returns a handle and promises a notification, which is true in an interactive session and false for you, and it also leaves no board row, so every guard is bypassed at once. The sanctioned spawn is `hive-dispatch run` (one leaf) or `hive-dispatch fanout` (a batch), blocking, in this turn.
+  - **Enforced in the wrapper, because three written mitigations failed.** `hive-dispatch run --require-artifact <path>` (repeatable; manifest key `require-artifact` under `fanout`) refuses to mark the row `done` unless the leaf really wrote that file **during this dispatch**: absent, empty, and left over from an earlier round all read the same. Separately, a clean return whose closing words promise later work is refused as `deferred-work`. Both land the row `blocked` and exit **12**, never `done`.
+  - **Dispatchers name every leaf's artifact.** A dispatch with no `--require-artifact` is a leaf whose only proof of work is its own prose, which is what failed four times over. The wrapper cannot check a contract nobody stated.
+  - **Wider than Law *A*, not a restatement of it.** *A* says hold your call open for your children. *A-3* says you have no future at all, spawn or no spawn: the fourth instance obeyed *A* in full and deferred a **poll** instead.
+- **Hosts — four, human-selected at kickoff (multi-select); this sets WHERE the Lead runs:**
+
+  | Host | Where the Lead runs | Status |
+  |---|---|---|
+  | **cursor-cloud** | remote Cursor Cloud VM, own checkout, viewable at `cursor.com/agents` | **proven · default** |
+  | **cursor-local** | `cursor-agent` on this machine (own worktree per Lead) | proven |
+  | **claude-cloud** | Claude Code on Anthropic infrastructure. `claude --cloud` **needs a TTY**, so a Master dispatches via the **routines fire API**; the Lead reports by **pushing its verdict to shared memory**, never by returning a line (there is no result API). Skills must be committed **in the repo** — a VM has no `~/.claude/skills`. Verify the checkout has a remote before working: a bundled session has none and can push nothing (`docs/agents/hive-cloud-dispatch.md`) | partly proven |
+  | **claude-local** | a separate Claude Code context (spawns its own leaves) | proven — a dispatched subagent loads its Lead skill (2026-07-25) |
+
+  Per-host launch/report mechanics and standing limits: `docs/agents/hive-cloud-dispatch.md`.
+- **The recorded mechanism is binding.**
+  - `master.md` records the host set + routing at kickoff. Honor it.
+  - **Changing shape mid-run** (host set, routing) **is an escalation to the human**, never a dispatcher's call — a run whose ticket 7 used a different topology than tickets 1–6 isn't resumable or comparable.
+- **Lead-URL start-ping.** When the Master starts a Lead it **reports the Lead's URL immediately** (cursor-cloud → the REST `url`; local → note "no viewable URL") and records it on the Lead's board row.
+
+## B. Model families, never versions
+
+- **Families:** **claude** (sonnet / opus / fable) · **gpt** (sol / terra) · **xai** (grok).
+- **Resolve the live id at dispatch** (`GET /v1/models` REST, or `agent models` CLI) — never pin a version. A rejected id → re-query, never guess.
+- **The CLI reaches the full cross-family roster** (claude / gpt / xai). **Claude Code's native subagent tool reaches claude-family models only** — so it cannot do cross-family, and any gpt / xai model requires the CLI.
+  - It offers sonnet, opus, haiku and fable. **`haiku` is reachable but off the roster — too weak, never dispatch it**; `fable` stays bound by the no-Fable rule.
+- **No gemini / kimi / glm** — not smart enough.
+- `composer` = cheap, **trivial-leaf only** (it loops on anything complex).
+- **`build` routes by difficulty, on a cross-family host only:**
+
+  | Difficulty | Routes to |
+  |---|---|
+  | normal | sonnet / grok / terra |
+  | hard backend **or** security | **sol** |
+  | hard frontend | **opus** |
+
+  **On a claude-only host this table has no target.** Two models exist and the reviewer takes the top one, so `build` is `sonnet` at every difficulty and a ticket needing a stronger builder runs on a `cursor-*` host instead (`/hive-lead` §4.3 ², which owns the ordering and its trade-off).
+
+  Full class→family mapping and effort: **`/hive-lead`'s class tables.**
+- **Every dispatch names model AND effort explicitly** — never let a leaf fall back to an unspecified default.
+
+## C. Router discipline — the never-stream law
+
+- **An orchestrator reads only a distilled return or a finished artifact** — never a streamed trajectory, never a leaf's payload (report, findings table, diff).
+  - Feeding a child's full stream / trajectory into the orchestrator's context is the **111M-token bloat** this forbids (an orchestrator reading full reports hit 111M tokens in 3 tickets).
+- `--output-format stream-json` **can** pipe a child's full stream to a parent — it's what proves nesting. But that is **human observability, out-of-band** (the Lead URL / dashboards / hooks), **never the router's input.**
+- **Aggregators are the one designed exception:** the Inspector / Panel read their own lenses' **finished findings files** to consolidate — a finished artifact, still not a live stream.
+- **Deep reads happen only on an escalated path**, by a fresh agent reading history by pointer.
+
+## D. Tracker-first — create every declared, matching names
+
+- **No work starts without a tracker item.** Before touching the problem, create the tracking issue **yourself, using the available tracker tools** — never ask the human to create it for you. Which tracker(s) depends on the run's declared mode, below — three, not two.
+- **Three modes, declared once in `PROJECT-PROFILE.md`'s Tracker entry (`/hive-profile-builder` §5) and never mixed on one run:**
+
+  | Mode | Tracker item | Ships? |
+  |---|---|---|
+  | **Real tracker** | Create **yourself, in every tracker the profile declares, using the available tracker tools**. Two declared (Jira and Linear) → mirror the same ticket into each, never relying on auto-mirror, so both keys exist. **One declared is a legitimate configuration, not a half-done one**: a repo that genuinely runs on Jira alone declares `Linear: none` and its tickets carry one key. What is forbidden is a *mix* — some tickets with two keys and some with one. | Yes |
+  | **GitHub-issues** | Create **yourself, as a GitHub issue on the repo**, using the available tracker tools. One key, one system — never invent a second tracker to satisfy the "both" habit from the row above. | Yes |
+  | **Rehearsal** | None — a local `tickets.md` breakdown is **not** a tracker item; it carries no keys by construction (`/hive-issue-planner`'s file template has no keys section). | **Never** |
+
+  - **GitHub-issues is for the human's own personal/tooling repos** (her own accounts, not a client's or an employer's) **where no Jira/Linear project exists for this work** — a real, sanctioned mode, not a workaround or a downgrade from "real tracker." Declaring it does not imply the work is less real; only rehearsal means that.
+  - **`none` against a tracker is a declaration, and the profile is where it is settled.** It means "this repo does not use that tracker", which a posting role reads as *no entry in `tracker:[…]`* rather than a failure to post. It is a gap only when the repo demonstrably does use that tracker and the profile has not caught up, which is a profile refresh, not a run-time decision. *(A live run had every ticket on Jira alone while the profile still declared Linear; kickoff would have refused the run over a tracker nobody uses. 2026-07-31.)*
+  - **A repo's mode is fixed by its `PROJECT-PROFILE.md`, not chosen per-ticket** — refresh the profile if the mode ever needs to change, never let one ticket in a repo use GitHub-issues while a sibling uses real-tracker.
+- **Every posting role reports its tracker posts in ONE mode-shaped field, `tracker:`.** Grammar owned here, for the Inspector, the Scout, the gate-Lead and anything added later:
+
+  | Mode | Field |
+  |---|---|
+  | **Real tracker** | one entry per **declared** tracker: `tracker:[jira:<v>,linear:<v>]` two declared · `tracker:[jira:<v>]` Jira alone |
+  | **GitHub-issues** | `tracker:[github:<v>]` |
+  | **Rehearsal** | `tracker:n/a(rehearsal)`, no tracker item exists to post on |
+
+  `<v>` = the posted comment URL · `unposted(auth)` (the key exists, this leaf lacks its auth; `/hive-ticket-lead` §8.7 owns the fallback) · `n/a` (that tracker's key genuinely does not exist on this item).
+  - **The entry list is the mode's tracker set, complete, every time.** A tracker the mode does not use carries **no entry at all**. That absence, not a value, is how a reader and a gate tell *not applicable in this mode* from *failed to post*. Never spend a per-tracker `n/a` on a tracker belonging to another mode: `[jira:n/a,linear:n/a]` on a GitHub-issues run means the review landed nowhere while reading like a clean skip.
+  - **A missing entry for a tracker the mode does use is a dispatch defect**, re-dispatched like any missing required field, never read as a skip.
+  - **Never a bare `jira:` / `linear:` / `github:` field of its own.** One field, so a fourth mode changes this table and nothing else.
+- **Branch + commit + PR carry the mode's key(s).** Commit shapes: `/hive-lead` §9 · ticket-PR mechanics: `/hive-ticket-lead` §3. **Branch grammar is owned here.**
+  - **A branch ref carries ONE slash, ever — `<type>/<slug>`, nothing deeper.** Two independent reasons, both load-bearing: git refuses a ref that is simultaneously a leaf and a directory prefix, so a name nested under a parent whose own ref contains a slash **cannot be cut at all**; and a two-slash ref **silently breaks SDLC build routing** — a repo's branch-name check tracks build state only for `main`, `release/X.Y.Z`, a bare tracker key, or an exactly-one-slash `<a>/<b>`, so anything deeper builds **green while running a stale package from `main`** (luma-agent, real incident 2026-06-12 — invisible until it bites).
+  - **Every phase / ticket / hierarchy identity folds into the hyphenated slug AFTER the single `<type>/` segment** — never as a leading segment before it, never as a parent-branch prefix. **Parentage is the ref you cut FROM, not a segment inside your own name.**
+  - `<type>` = `feat` (Story) · `fix` (Bug) · `chore` (Task) · `spike` (Spike) · `docs` (docs-only), from the ticket's issue type. `<tracker-keys>` = whatever the mode above prescribes — real-tracker: **every declared key, hyphen-joined** (`LP-xxxx-LAK-xxxx` two declared · `LP-xxxx` one declared, or until a second's mirror exists) · `GH-xxxx` GitHub-issues · the numeric ticket id in rehearsal. Never hardcode one tracker's shape.
+  - **Three shapes; the breakdown's own shape picks which:**
+
+    | The breakdown | Branch | Example |
+    |---|---|---|
+    | **Phase-structured** — has a phase **and** a `P.T` ticket id | `<type>/phase-<P>-<T>-<tracker-keys>-<slug>` | `feat/phase-1-1-LP-16616-corrective-aggregate-cut` |
+    | **No phase, more than one ticket** — a flat numbered list, no phase-grouping layer | `<type>/<n>-<tracker-keys>-<slug>` — `<n>` = the ticket's own sequence number (1, 2, 3…) | `feat/3-LP-16618-<slug>` |
+    | **Single ticket only** | `<type>/<tracker-keys>-<slug>` | `feat/LP-16618-<slug>` |
+
+    In a hive, cut from its parent's branch in every row. The invariant binds **every** branch at every depth — unit/phase branches too, not just ticket branches.
+  - Commit / PR subject: `<hierarchy-path>-[<keys>]: <what>`, `<keys>` = **every declared key, slash-joined**: `LP-xxxx/LAK-xxxx` two declared · `LP-xxxx` one · `GH-xxxx` GitHub-issues. **A subject is a plain string, not a git ref** — it keeps the full slashed hierarchy path (`phase-1/1.1-[…]`) and the one-slash rule does not touch it.
+- **Enforcement:**
+  - `/hive-issue-planner` step 6 creates the ticket item(s) for whichever mode the profile declares — every declared tracker for real-tracker, the one GitHub issue for GitHub-issues.
+  - `/hive-master` kickoff refuses a ticket missing its mode's required key(s) — every declared tracker's key, for real tracker; the one GitHub issue key, for GitHub-issues.
+    - A run scheduled off a keyless local `tickets.md` breakdown is a **rehearsal run**: for exercising the hive workflow itself (dry runs, skill testing), **never for work that ships**.
+    - **Rehearsal run =** `--mode rehearsal` · the **numeric ticket ids stand in for the keys** (`/hive-lead`'s numeric-id rule) · the kickoff refusal above does not fire · **it NEVER folds to `main`** — a hard stop on top of *H*'s human-only fold, so the human is not even asked.
+    - `--mode` is the run's Law *D* authority: set at kickoff, recorded in `run.mode`, and prompt-injected into every leaf; `master.md` renders it at kickoff as the audit copy, never the source — do not read a mode from a file.
+    - This is the boundary of the law, not an exemption from it: **anything that ships creates a real tracker item, in whichever of the two sanctioned modes the profile declares**, and a run whose `run.mode` is not `rehearsal` is a real run under every sentence above.
+  - Ad-hoc work meets the same precondition at `/hive-architect` / the bootstrap skill.
+- Naming detail: **`/hive-lead`** (commit shapes) · **`/hive-ticket-lead`** (ticket-PR mechanics). **Branch grammar is not delegated** — it is stated above, here, once; every other site points back.
+
+## E. Commit convention
+
+- **The ticket squash commit carries NO role tag:** `<hierarchy-path>-[<keys>]: <what>`.
+- Role tags appear **only on genuinely single-role commits**: `master` · `gatekeeper` · `triage` (**standalone bugbot run with no `.hive-workflow` mount only**) · `patcher` / `reviewer` (**any standalone bugbot run** — the only place either tags code; the no-mount scoping applies to `triage` alone). Model tag = lowercase short name.
+- **In a hive run the bug-checker writes no role-tagged commit at all** — its only commit is the shared-memory `memory:` write-through (`/hive-pr-bugbot-triage`'s _Commit convention_).
+- Worked examples: **`/hive-lead`'s _Commit convention_.**
+
+## F. Workflow edits never ride a ticket PR
+
+- Changes to `.claude/skills/` (the source of truth, hive-testbed), its synced copies (`.cursor/skills/`, `.cursor/rules/`), the wrapper (`bin/`), or hive docs go on their **own branch + PR** — never mixed into a feature ticket.
+- A reviewer calling them out-of-scope is right — the fix is to **move them to their own branch, never revert them** (reverting destroys work that simply had the wrong home).
+- **A claim about what a platform CANNOT do requires a probe, not a sentence.** Two such claims were load-bearing in this corpus and **both were false when finally tested** — "Bugbot skips draft PRs" and "Claude native subagents cannot nest" — and each had rules built on top of it. Before writing a limitation into a skill or into this rulebook: run the smallest experiment that would disprove it, and record the result and its date next to the claim.
+
+## G. Protected config
+
+- **Never weaken a check to turn a gate green** — linter / formatter config, tsconfig strictness, coverage threshold, CI check, test timeout, or a skip. That is an **architecture-change escalation, never a fix round.**
+- **The code moves to the check, not the check to the code.**
+
+## H. Merge safety
+
+- **Never push to `main`, force-push, or `--no-verify`.** Never admin- / force-merge past a failing or pending check.
+- **Every hop obeys this** — a unit's PR into its parent's branch, at any depth — never with unresolved findings.
+- **A unit's PR targets its PARENT'S branch; the root is `main`. The owning agent merges its own PR into its parent — UNLESS the parent is `main`.**
+  - Base is **not** `main` → the owning agent **merges**. A gate-Lead whose gate passes therefore **does merge** the unit into its parent's branch, and says so in its verdict line.
+  - Base **is** `main` → it returns `gate green · … · merge:held(base-is-main)` and **stops**. The Master carries that line to the human for the go.
+- **Any fold to `main` is the human's call.** No role folds to `main` on its own — not a Lead, not the Master. Stop and get an explicit go.
+  - **Law *H* anchors to `main` literally, not to a level.** That is what makes the rest generalise: every other merge is an agent's, every `main` merge is the human's, at any depth. A unit is bound here because its base *is* `main`, not because of where it sits in the hierarchy.
+- **ONE GATE AT A TIME PER BASE.** Units sharing a base share one target. Two gates running in parallel against the same base means **neither tested the combination** — and there is no final gate left to catch it.
+  - **Never dispatch a gate-Lead while another gate-Lead holding the same base is still running**, and **serialize the folds**: a unit is folded into its base before the next unit sharing that base opens its gate.
+  - **This serialization is what replaces the deleted final gate.** The final gate existed because no gate had yet tested the siblings together. With a shared base, each unit gates against that base with every previously folded sibling already in it — integration is tested incrementally, and the last sibling's gate *is* the integrated test. **That holds only while gates and folds stay serialized.** Do not drop this rule: it carries the entire safety argument the final gate used to carry.
+
+## I. The escalation ladder
+
+Binds every role — Master, Lead, and a standalone run with no Master above it. **Climb one rung at a time and log each on the board.**
+
+1. **Max-effort re-attack.** Point a fresh agent at the full history *by path* (`decisions.md`, `inspector-r*.md` / `scout-report.md`, board rows); it reads its own slice.
+   - **Change the METHOD, not just the effort** — demand a minimal reproduction, a hypothesis list, and instrumentation or bisection *before* any new fix.
+   - A re-attack that starts by editing code is doing round 4, not rung 1. (`/diagnosing-bugs` is exactly this loop — a global skill, not twinned into this repo, so a cursor-cloud leaf running from the checkout cannot load it.)
+   - **You never write the fix yourself.**
+2. **Cross-model view.** One `/hive-second-opinion` call — what is wrong, the options, your best theory. A consultative call, not a dispatch.
+3. **Human.** Stop and report: what is blocked, the rungs climbed, what each found, and the best remaining theory.
+
+- **Never burn past rung 2 without the human.**
+- **The ladder is climbed by whoever holds the work — the Lead.** It has the history a re-attack and a second opinion need; the Master holds only a distilled line and could not brief either.
+  - **A Lead** climbs all three rungs: a fresh leaf at max effort, then `/hive-second-opinion`, then report `blocked` upward.
+  - **The Master** does not run rungs 1 or 2 itself. On a `blocked` return its move is to dispatch a **fresh Lead** at max effort — which climbs the ladder in its own context — and if that Lead also returns `blocked`, the Master goes to the human. It never calls `/hive-second-opinion`.
+- **Escalation output that the current ticket cannot absorb gets its own tracker item, in **every tracker the profile declares** (Law *D*: one or both, never a mix across tickets), before it is parked.** On a GitHub-issues run that is the one GitHub issue; on a rehearsal run there is no tracker and the parked item is a line in the local breakdown, never an invented one. The role that holds it creates it — the **Lead** for ticket-scope work, the **Master** for anything wider than one ticket. Work handed off with no tracker item is a phantom owner, which the hive already treats as a blocker.
+
+## J. A finding closes on the surface it was opened on
+
+Binds every role that opens or fixes a review finding: Inspector (step 9), bug-checker (`/hive-pr-bugbot-triage` step 4), Builder/Patcher, and the Lead's pre-merge gate.
+
+- **Posting is unchanged and never traded away.** Closure is what the opening role owes *in addition*, once the finding is fixed. A skill that posts fewer findings to satisfy this law has broken it.
+- **Closure is one reply, then a resolve:** `fixed in <sha>` plus the root cause, then mark the thread resolved. `<sha>` is the pushed commit that carries the fix, never the ticket's eventual squash sha, which the fixer does not have yet.
+- **The fixer closes the thread; nobody else does.** Never resolve a thread you did not fix, or one whose fix you are unsure of. Unsure means an open thread plus your question on it.
+- **Never leave a finding open on fixed code.** The ticket PR is the human's review surface and the merge gate's evidence trail. A live PR showed 6 of 6 merge-blocking findings still open, with `in_reply_to: null`, after both Patchers had fixed them and the re-review returned `5.0/5 · 0 merge-blocking`: the PR contradicted its own verdict, and no lens, skeptic or gate noticed, because every one of them counts artifacts instead of reading threads.
+- **Tool-side resolution is not evidence, in either direction.** A review bot that auto-resolves its own thread when the file changes has recorded *that the file changed*, nothing more. Live: thread `3685962187` was auto-resolved with no reply and no intervening change addressing it, `isOutdated:false`, and the claim was still true at HEAD. So `isResolved:true` is never a disposition, and an unresolved thread on already-fixed code is not a defect either. **What IS evidence: a code-path trace at current HEAD naming `file:line`, plus the fixing commit.** Triage every thread on its merits whatever its resolved field says, and never let that field filter what you read.
+- **Checked positively before merge**, on the PR, with a count that can actually fail: unresolved threads opened by the hive's own roles must be zero (`hive-dispatch check-merge`; `/hive-ticket-lead` §8.2). "No findings" and "no unresolved threads" are different facts, and only the second is checkable.
+
+## K. A disagreement between two traces is a state, never a silent winner
+
+Binds every aggregator holding evidence of its own beside a leaf's verdict: the Inspector (step 5) and the Panel conductor (*Reconciliation*).
+
+- **Neither overrule nor defer.** Overruling makes the refuting leaf decorative; deferring discards the only independent evidence the aggregator has. Both end identically, in a verdict nobody can see was contested. *(F9, 2026-07-30: a skeptic upheld a reachability finding that the Inspector's own exhaustive grep refutes. The Inspector was right and acted on it, and the round recorded only its conclusion. Two traces disagreed and the disagreement itself reached no one.)*
+- **The disagreement is the artifact: record it `Disputed`, carrying BOTH traces.** Disputed means the same thing everywhere: **not confirmed**, so no score deduction and no patch batch; **non-blocking** unless 2+ lenses corroborated it, security and tenant isolation excepted (`/hive-panel`'s keep-bias bound); **counted on the distilled return and named individually** in the report and the run wrap-up, because the caller reads a line and never opens a findings file (Law *C*).
+- **Doubt is not disagreement, and that is what keeps the state rare.** Your contradicting evidence enters only if it clears the bar a finding clears: a cited `file:line`, or a literal command with its output and its scope stated. Anything weaker leaves the leaf's verdict standing and records nothing. An aggregator that formed no independent evidence has no disagreement to declare.
+- **An absence claim is settled by a search, never by reading the implementation.** "Nothing reaches this", "no production caller", "no input triggers it": a verdict on one of those counts only if it names the search it ran and what that search returned. Re-deriving the callee's own internals is not a search for a caller. A verdict naming no search is **no verdict**, handled as a missing one by whoever dispatched it.
+- **Disputed buys no new round.** Each role resolves it with machinery its own procedure already defines, inside its own invocation (the Panel's one rebuttal and single hatch). A role with none, the Inspector included, treats Disputed as terminal and lets the finding travel to the role that has one. A tie-break round here would cost every ticket a leaf to tidy a rare state.
+
+## L. A rule implemented twice is declared on both halves
+
+Binds the author of the second implementation (Builder / Patcher) and everyone who reviews it (Inspector, `/hive-panel` lenses).
+
+- **Twins drift, and nothing reads them side by side.** *(F26, 2026-07-30: one fail-closed rule existed as a SQL guard and as its offline Python twin. The SQL half tested the most dangerous condition first, deliberately, with a comment saying so; the Python half tested version first and returned early, skipping its own coverage test entirely. One author's discipline held one half and no invariant held the other. The pair's only record was a docstring calling them "sibling in shape".)*
+- **The author of the second half declares it, being the only one who certainly knows.** Nobody writes the offline twin of a database guard without knowing that guard exists; every later reader is guessing. That is the whole answer to "how would a reviewer know", and there is no other.
+- **The declaration is a marker in BOTH files, reciprocal:** `hive-twin: <repo-relative path of the other half> | <the one rule both halves implement>`. One-way is worthless: the half carrying no marker is the half whose next editor learns nothing.
+- **`hive-dispatch check-twins` enforces the mechanical part** (grammar and contract: `bin/README.md`): a marker whose target is not in the tree, a marker the other half does not return, and a diff editing one declared half while leaving the other untouched with no `twin-unchanged:` line in `decisions.md`.
+- **What no machine can do is find an UNDECLARED twin, and claiming otherwise would be worse than the gap.** The check reads declarations, never similarity. That gap closes only through the author's duty above and through the Inspector's code-shape lens, which already hunts duplicated logic: **an intentional duplicate is not excused by `decisions.md`, it is required to be declared.**
+- **Reviewing a declared pair means reading both halves, and check ORDER is part of the rule.** For a fail-closed rule, which condition is tested first, and whether an early return can skip a later test, is the rule itself. Two halves agreeing on every condition and differing on their order are not the same rule, and the one that returns early is the one that fails open.
+
+## M. Every gate asks "did this pass". None asks "was this owed"
+
+- **A step nobody owed can pass every check in the corpus.** Gates read outcomes: green, `5/5`, `0 fix-now`, a posted URL. Not one of them reads *should this have run at all*, so surplus work is invisible by construction, and it looks exactly like diligence.
+  - *(A ticket dispatched a full E2E run its own §10.3 exempted: 31.5 minutes, an Octopus release, a test stack, 282 tests, all of it owed by the phase gate that still has to run it. Every gate went green. Nothing in the run could have caught it. 2026-07-30.)*
+- **Two rules pointing opposite ways is a FINDING, then a decision — never a decision alone.** The defect above was not choosing wrong. It was choosing without recording that a choice existed, so nothing downstream could see one had been made, and the more specific rule that would have settled it was never consulted.
+  - **Specific beats general**, always: a rule about *this* step (who owns E2E, who owns a gate) wins over a rule about *all* steps (every check green, every artifact present).
+  - File a `concern` finding naming **both** rules and the one you took, then proceed. `hive-dispatch finding` allocates the id and writes the row; filing it is what makes the conflict a corpus finding instead of a private judgement call.
+- **Before dispatching anything expensive, answer one question: who owns this step?** If the answer is a parent, a gate or another unit, you do not run it early as a favour. Their gate still owes the work, so the cost is paid twice and the artifact is bound to a tree that unit will not merge.
+- **This is the sibling of the silent-failure rule.** The dangerous defects announce nothing. A lost write and a duplicate id announce nothing because they fail quietly; unowed work announces nothing because it *succeeds* quietly. Same blind spot, opposite sign.
+
+## N. Every finding gets the ownership question, whatever produced it
+
+Binds every role that *produces* a finding: the Inspector and its lenses and skeptic, the Panel and its lenses and debaters, the Scout, the Gatekeeper, the bug-checker. Law *J* governs what happens to a finding once it is opened; this one governs whether it is owned at all.
+
+- **Only the bug-checker could ever hand a finding to another ticket, and nothing else in the corpus could.** Grep `bugs-open` across `/hive-inspector` and `/hive-panel`: zero hits. An out-of-scope defect a lens found went into the one mixed findings file and died there. **The ledgers are not equivalent and never were:** `bugs-open.md` has an owning-ticket column, a closure gate on the owner's `done` gate, and is what the Master's run-wide sweep reads; the flow ledger has none of that by design, because a workflow defect has no ticket breakdown to be deferred into. *(F59, 2026-07-31: run 1 filed 11 product defects into the mixed file against a ticket that then merged, and they were lost rather than deferred. Run 2 repeated it with at least five, one of them a security defect. The mixed file `flags.md` was replaced by three named ledgers on 2026-07-31 and retired outright on 2026-08-05 (#29); see `/hive-lead` §8.)*
+- **Four questions, in order, evidence first. Every finding answers all four before the round closes:**
+
+  | # | Question | Answer → |
+  |---|---|---|
+  | 1 | **Real?** Reachable at HEAD, with a code-path trace naming `file:line` | no → **rejected FP**, recorded with the refuting evidence. Done. |
+  | 2 | **Do THIS ticket's acceptance criteria cover it?** | yes → **fix-now** |
+  | 3 | **Does a later ticket's DECLARED SCOPE cover it?** | yes → **defer**, naming the ticket and **quoting the scope line** you read it off |
+  | 4 | **Does no ticket cover it?** | **phantom owner: create the tracker item** (Law *D*'s mode), then defer to it. **Never a silent defer, and never a flow-ledger row instead.** |
+
+- **The test is which ticket's acceptance criteria cover the fix. It is NOT who wrote the line.** A defect can be pre-existing and still squarely this ticket's, because **a ticket owns an invariant, not a diff**. Setting a finding aside as "pre-existing, not this diff's" answers a question nobody asked. *(F59's own worst case: a write-authority guard that validates an INSERT against attacker-supplied `NEW` and never cross-checks the owning row's `user_id` was set aside as pre-existing, while the ticket's AC-5 required every catalog entry to enforce *the complete authority predicate*, which is exactly what the finding says it fails to do.)*
+- **One finding often splits, and the split must be expressible.** The half this ticket's ACs cover is fix-now; the half a later ticket's scope covers is deferred, with its own row and its own owning ticket. Record both dispositions against the one finding id (`F7a` fix-now, `F7b` deferred), never a single verdict for the larger half.
+- **A deferral is a ROW in `$HIVE_MEM/<run-key>/bugs-open.md`, and the wrapper is the only writer:**
+  ```
+  hive-dispatch finding --run-dir "$HIVE_MEM/<run-key>" --who <role-model> \
+    --defer-to <owning-ticket> --severity <info|concern|blocking> \
+    --claim "<one line>" --location "<file:line>" --evidence "<pointer>"
+  ```
+  It allocates the id, writes the row (`| id | opened | reporter | sev | location | status | owning-ticket | summary |`, `reporter` = the role and model that found it, `status` = `deferred`) and re-renders the ledger. **Never hand-write a row and never pick an id** — the next write re-renders the file from `findings.json` and a hand-written row is gone.
+  - **Deferring is not a state a finding can be left in.** `hive-dispatch finding` refuses `--status deferred` outright, and refuses a `--defer-to` that names nobody real (`-`, `tbd`, blank), writing **no row** either way. A deferral that writes no row is refused, not recorded.
+  - The owning ticket's Builder is the only writer that closes it: `hive-dispatch close-bug --run-dir "$HIVE_MEM/<run-key>" --id <row> --sha <fixing sha> --evidence "<pointer>"`, which moves the row to `bugs-closed.md` as `closed · <sha>` (F79). A placeholder sha, or anything that is not a sha, is refused.
+  - **`hive-dispatch check-merge` refuses a row naming no owner**, and refuses a non-zero `deferred:<n>` on a round whose open-bug ledger holds no rows. It reads EVERY round's claim, not just the last one (F68).
+  - A finding may ALSO belong in `flow-findings.md` (a design conflict, an ADR contradiction that is the workflow's own defect). A flow-ledger row is never the deferral: it carries no owner and closes nothing.
+- **The count rides the producer's distilled return, because the caller reads a line and never opens a findings file** (Law *C*). `deferred:<n>` on the Inspector's and the Panel's return, `deferred(<ticket>)` on the bug-checker's routing line. **Mandatory every round; a round with nothing to defer returns `deferred:0`.** A round that never asked reads exactly like a round with nothing to defer, which is the whole of how sixteen defects were lost across two runs.
